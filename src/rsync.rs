@@ -1,7 +1,10 @@
 use super::config::Config;
 use super::commit::Commit;
+use super::status;
 use std::process::Command;
 use std::fs;
+use tempdir::TempDir;
+
 
 const DATA_FOLDER_NAME: &str = "data";
 
@@ -34,12 +37,15 @@ pub fn make_commit(conf: &Config, name: String, message: String, verbose: bool) 
     let src_arg = format!("{}/", conf.get_backup_location().display());
     let dest_arg = format!("{}", data_folder.display());
 
-    let rsync_command = Command::new("rsync")
-        .arg(&flags)
-        .arg(&link_arg)
-        .arg(&src_arg)
-        .arg(&dest_arg)
-        .output();
+    let mut rsync_command = Command::new("rsync");
+    rsync_command.arg(&flags);
+    rsync_command.arg("--delete");
+    if !link_arg.is_empty() {
+        rsync_command.arg(&link_arg);
+    }
+    rsync_command.arg(&src_arg);
+    rsync_command.arg(&dest_arg);
+    let rsync_command = rsync_command.output();
     
     if rsync_command.is_err() {
         eprintln!("Unable to spawn rsync command");
@@ -55,4 +61,57 @@ pub fn make_commit(conf: &Config, name: String, message: String, verbose: bool) 
     new_commit.write_commit_file();
     Commit::write_latest(conf, &new_commit);
     new_commit
+}
+
+pub fn print_status(conf: &Config) {
+    let latest_commit = Commit::get_latest(conf);
+    let compare_path = if latest_commit.is_some() {
+        latest_commit.unwrap().get_folder().join(DATA_FOLDER_NAME)
+    } else {
+        let empty_dir = TempDir::new("resilient");
+        if empty_dir.is_err() {
+            eprintln!("Unable to allocate empty dir!");
+            std::process::exit(1);
+        }
+        empty_dir.unwrap().path().to_path_buf()
+    };
+
+    let src_arg = format!("{}/", conf.get_backup_location().display());
+    let dest_arg = format!("{}", compare_path.display());
+
+    let flags = "-aAXin";
+    let delete_flag = "--delete";
+
+    let rsync_command = Command::new("rsync")
+        .arg(flags)
+        .arg(delete_flag)
+        .arg(&src_arg)
+        .arg(&dest_arg)
+        .output();
+    
+    if rsync_command.is_err() {
+        eprintln!("Unable to spawn rsync command");
+        std::process::exit(1);
+    }
+
+    let rsync_output = rsync_command.unwrap();
+    if !rsync_output.status.success() {
+        eprintln!("rsync command failued with: {}", String::from_utf8(rsync_output.stderr).unwrap());
+        std::process::exit(1);
+    }
+
+    let output_str = String::from_utf8(rsync_output.stdout);
+    if output_str.is_err() {
+        eprintln!("Unable to parse rsync output");
+        std::process::exit(1);
+    }
+
+    let output_str = output_str.unwrap();
+    for output_line in output_str.lines() {
+        let parsed_change = status::parse_change(output_line);
+        if parsed_change.is_some() {
+            println!("\t{}", parsed_change.unwrap().get_mod_string());
+        }
+    }
+
 }
