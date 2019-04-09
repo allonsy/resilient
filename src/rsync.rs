@@ -45,7 +45,7 @@ pub fn make_commit(conf: &Config, name: String, message: String, verbose: bool) 
     }
     rsync_command.arg(&src_arg);
     rsync_command.arg(&dest_arg);
-    let rsync_command = rsync_command.output();
+    let rsync_command = rsync_command.status();
     
     if rsync_command.is_err() {
         eprintln!("Unable to spawn rsync command");
@@ -53,8 +53,8 @@ pub fn make_commit(conf: &Config, name: String, message: String, verbose: bool) 
     }
 
     let rsync_output = rsync_command.unwrap();
-    if !rsync_output.status.success() {
-        eprintln!("rsync errored out with: {}", String::from_utf8(rsync_output.stderr).unwrap());
+    if !rsync_output.success() {
+        eprintln!("rsync errored out with code: {}", rsync_output.code().unwrap());
         std::process::exit(1);
     }
     
@@ -113,5 +113,59 @@ pub fn print_status(conf: &Config) {
             println!("\t{}", parsed_change.unwrap().get_mod_string());
         }
     }
+}
 
+pub fn restore(conf: &Config, commit: String, path: String, verbose: bool) {
+    let backups_dir = conf.get_backups_folder();
+    let commit_dir = backups_dir.join(&commit);
+    if !commit_dir.exists() {
+        eprintln!("Cannot find commit: {}", commit);
+        std::process::exit(1);
+    }
+
+
+    let src_arg = if path.is_empty() || path == "/".to_string() {
+        format!("{}/", commit_dir.join(DATA_FOLDER_NAME).display())
+    } else {
+        if path.starts_with('/') {
+            format!("{}{}", commit_dir.join(DATA_FOLDER_NAME).display(), &path[1..])
+        } else {
+            format!("{}/{}", commit_dir.join(DATA_FOLDER_NAME).display(), path)
+        }
+    };
+
+    let backup_location = conf.get_backup_location();
+    let dest_arg = if path.is_empty() || path == "/".to_string() {
+        format!("{}", backup_location.display())
+    } else {
+        if path.starts_with('/') {
+            format!("{}{}", backup_location.display(), path)
+        } else {
+            format!("{}", backup_location.join(path).display())
+        }
+    };
+
+    let flags = if verbose {
+        "-aAXv"
+    } else {
+        "-aAX"
+    };
+
+    let rsync_command = Command::new("rsync")
+        .arg(flags)
+        .arg("--delete")
+        .arg(&src_arg)
+        .arg(&dest_arg)
+        .status();
+    
+    if rsync_command.is_err() {
+        eprintln!("Unable to spawn rsync command");
+        std::process::exit(1);
+    }
+
+    let rsync_output = rsync_command.unwrap();
+    if !rsync_output.success() {
+        eprintln!("rsync errored out with code: {}", rsync_output.code().unwrap());
+        std::process::exit(1);
+    }
 }

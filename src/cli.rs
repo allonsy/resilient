@@ -3,6 +3,7 @@ use chrono::offset::Utc;
 pub enum Command {
     Create(CreateOptions),
     Status,
+    Restore(RestoreOptions),
 }
 
 impl Command {
@@ -19,6 +20,10 @@ impl Command {
             },
             "status" => {
                 Command::Status
+            },
+            "restore" => {
+                let restore_options = RestoreOptions::parse_options(&args[2..]);
+                Command::Restore(restore_options)
             }
             _ => {
                 eprintln!("Unknown command: {}", args[1]);
@@ -84,6 +89,47 @@ impl CreateOptions {
             verbose,
             name,
             message
+        }
+    }
+}
+
+pub struct RestoreOptions {
+    pub verbose: bool,
+    pub commit: Option<String>,
+    pub path: String
+}
+
+impl RestoreOptions {
+    fn parse_options(args: &[String]) -> RestoreOptions {
+        let mut index = 0;
+        let arglen = args.len();
+        let mut verbose = false;
+
+        let mut path = String::new();
+        let mut commit = None;
+
+        while index < arglen {
+            match args[index].as_str() {
+                "-v" => {
+                    verbose = true;
+                },
+                pathspec => {
+                    let split_path: Vec<&str> = pathspec.split(":").collect();
+                    if split_path.len() == 1 {
+                        path = split_path[0].to_string();
+                    } else {
+                        commit = Some(split_path[0].to_string());
+                        path = split_path[1].to_string();
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        RestoreOptions {
+            verbose,
+            commit,
+            path
         }
     }
 }
