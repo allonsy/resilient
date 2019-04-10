@@ -10,7 +10,11 @@ const DATA_FOLDER_NAME: &str = "data";
 
 pub fn make_commit(conf: &Config, name: String, message: String, verbose: bool) -> Commit {
     let backups_dir = conf.get_backups_folder();
-    let new_backup_folder = backups_dir.join(name);
+    let new_backup_folder = backups_dir.join(&name);
+    if new_backup_folder.exists() {
+        eprintln!("Commit with name '{}' already exists", name);
+        std::process::exit(1);
+    }
     
     let mkdir_res = fs::create_dir_all(&new_backup_folder);
     if mkdir_res.is_err() {
